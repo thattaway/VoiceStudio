@@ -1,0 +1,55 @@
+# VoiceStudio — personal self-hosted web app.
+#
+# Builds the image from THIS checkout, so your own changes are included.
+# Setup and usage: deploy/selfhost/README.md
+#
+#   cd deploy/selfhost
+#   cp .env.example .env        # then fill in OMNIVOICE_API_KEY
+#   docker compose up -d --build
+#
+# GPU is the default. For a machine without an NVIDIA GPU, remove the
+# `deploy:` block below.
+
+services:
+  voicestudio:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    image: voicestudio:selfhost
+    container_name: voicestudio
+    ports:
+      # BIND defaults to all interfaces so you can reach it from other
+      # devices (LAN / Tailscale). Set BIND=127.0.0.1 in .env for this
+      # machine only.
+      - "${BIND:-0.0.0.0}:${PORT:-3900}:3900"
+    volumes:
+      # Models, voices, projects and settings. Survives rebuilds.
+      - voicestudio-data:/app/omnivoice_data
+    environment:
+      - HF_HOME=/app/omnivoice_data/huggingface
+      - HF_TOKEN=${HF_TOKEN:-}
+      - OMNIVOICE_DATA_DIR=/app/omnivoice_data
+      - PYTHONPATH=/app/backend
+      - PYTHONUNBUFFERED=1
+      # Headless server mode: lets the browser UI manage settings through
+      # Docker's network (requires the API key below).
+      - OMNIVOICE_SERVER_MODE=1
+      - OMNIVOICE_API_KEY=${OMNIVOICE_API_KEY:?set OMNIVOICE_API_KEY in deploy/selfhost/.env}
+      - OMNIVOICE_ANALYTICS_DISABLED=${OMNIVOICE_ANALYTICS_DISABLED:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3900/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    restart: unless-stopped
+
+volumes:
+  voicestudio-data:
